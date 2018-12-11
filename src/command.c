@@ -225,25 +225,31 @@ gpg_error_t cmd_setattr (assuan_context_t ctx, char *line)
     return gpg_error (GPG_ERR_NO_ERROR);
 }
 
+void fill_sexp(struct sexp **bundle, const char* operation_str, int with_data);
 gpg_error_t cmd_writekey (assuan_context_t ctx, char *line)
 {
 	  int rc;
-
+    unsigned char *keydata;
+    struct sexp* keydata_sexp;
+    struct sexp* bundle;
     size_t keydatalen;
-    char buffer[1000] = {0};
+    char buffer[2000] = {0};
+    int ret, nbytes;
     (void)line;
 
-    const char* str_a = NULL;
-    struct sexp *bundle, *keyid;
-    int ret, nbytes;
+    assuan_begin_confidential (ctx);
+    rc = assuan_inquire (ctx, "KEYDATA", &keydata, &keydatalen, MAXLEN_KEYDATA);
+    assuan_end_confidential (ctx);
 
     fill_sexp( &bundle, "writekey", 0 );
-    nbytes = sexp_serialize( bundle, buffer, 1000 );
+    sexp_new_string_len( &keydata_sexp, keydata, keydatalen );
+    sexp_add( bundle, keydata_sexp );
+    nbytes = sexp_serialize( bundle, buffer, 2000 );
     sexp_free( bundle );
 
-    assuan_begin_confidential (ctx);
-    rc = assuan_inquire (ctx, "KEYDATA", &buffer[nbytes], &keydatalen, MAXLEN_KEYDATA);
-    assuan_end_confidential (ctx);
+    ret = cks_transact(buffer, nbytes, 2000);
+    if( ret == -1 )
+        return gpg_error (GPG_ERR_GENERAL);
 
     return gpg_error (GPG_ERR_NO_ERROR);
 }
@@ -276,7 +282,7 @@ gpg_error_t cmd_genkey (assuan_context_t ctx, char *line)
         str_a = (const char*)sexp_get_str( sexp_a, NULL );
         snprintf (buffer, sizeof buffer, "q %s", str_a);
 
-    } else if ( (sexp_a = sexp_get( resp, "e" )) == NULL ) {
+    } else if ( (sexp_a = sexp_get( resp, "e" )) != NULL ) {
 
         str_a = (const char*)sexp_get_str( sexp_a, NULL );
         snprintf (buffer, sizeof buffer, "e %s", str_a);
@@ -293,7 +299,6 @@ gpg_error_t cmd_genkey (assuan_context_t ctx, char *line)
 
 }
 
-void fill_sexp(struct sexp **bundle, const char* operation_str, int with_data);
 gpg_error_t cmd_readkey (assuan_context_t ctx, char *line)
 {
     char buffer[1000];
